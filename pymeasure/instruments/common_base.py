@@ -24,14 +24,14 @@
 
 from inspect import getmembers
 import logging
-from typing import Any, Callable, cast, Optional, Protocol, Union, Sequence, TypeVar
-from warnings import warn
+from typing import Any, cast, Protocol, TypeVar
+from collections.abc import Callable, Sequence
 
 log = logging.getLogger(__name__)
 log.addHandler(logging.NullHandler())
 
 
-IdType = Union[int, str, None]
+IdType = int | str | None
 
 
 class Child(Protocol):
@@ -127,7 +127,6 @@ class CommonBase:
                          'map_values',
                          'get_process',
                          'get_process_list',
-                         'command_process',
                          'check_get_errors')
 
     _fset_params_list = ('set_command',
@@ -135,7 +134,6 @@ class CommonBase:
                          'values',
                          'map_values',
                          'set_process',
-                         'command_process',
                          'check_set_errors')
 
     # Prefix used to store reserved variables
@@ -153,7 +151,7 @@ class CommonBase:
         raise NotImplementedError("Subclasses must implement write_bytes.")
 
     def write_binary_values(
-        self, command: str, values: Sequence[Union[int, float]], *args, **kwargs
+        self, command: str, values: Sequence[int | float], *args, **kwargs
     ) -> None:
         raise NotImplementedError("Subclasses must implement write_binary_values.")
 
@@ -249,9 +247,9 @@ class CommonBase:
 
         def __init__(
             self,
-            cls: Union[type[Child], Sequence[type[Child]]],
+            cls: type[Child] | Sequence[type[Child]],
             id: IdType = None,
-            prefix: Optional[str] = "ch_",
+            prefix: str | None = "ch_",
             **kwargs,
         ) -> None:
             super().__init__(**kwargs)
@@ -343,8 +341,8 @@ class CommonBase:
         cls: type[child],
         id: IdType = None,
         collection: str = "channels",
-        prefix: Optional[str] = "ch_",
-        attr_name: Optional[str] = "",
+        prefix: str | None = "ch_",
+        attr_name: str | None = "",
         **kwargs,
     ) -> child:
         """Add a child to this instance and return its index in the children list.
@@ -414,7 +412,7 @@ class CommonBase:
         delattr(self, child._name)
 
     # Communication functions
-    def wait_for(self, query_delay: Optional[float] = None) -> None:
+    def wait_for(self, query_delay: float | None = None) -> None:
         """Wait for some time. Used by 'ask' to wait before reading.
 
         Implement in subclass!
@@ -423,7 +421,7 @@ class CommonBase:
         """
         raise NotImplementedError("Implement in subclass!")
 
-    def ask(self, command: str, query_delay: Optional[float] = None) -> str:
+    def ask(self, command: str, query_delay: float | None = None) -> str:
         """Write a command to the instrument and return the read response.
 
         :param command: Command string to be sent to the instrument.
@@ -437,21 +435,20 @@ class CommonBase:
     def values(
         self,
         command: str,
-        separator: str = ",",
+        separator: str | None = ",",
         cast: Callable[[str], T] = float,  # type: ignore[assignment]
-        preprocess_reply: Optional[Callable[[str], str]] = None,
+        preprocess_reply: Callable[[str], str] | None = None,
         maxsplit: int = -1,
         **kwargs,
-    ) -> list[Union[T, str]]:
-        """Write a command to the instrument and return a list of formatted
-        values from the result.
+    ) -> list[T | str]:
+        """Write a command to the instrument and return a list of formatted values from the result.
 
         :param command: SCPI command to be sent to the instrument.
         :param preprocess_reply: Optional callable used to preprocess the string
             received from the instrument, before splitting it.
             The callable returns the processed string.
         :param separator: A separator character to split the string returned by
-            the device into a list.
+            the device into a list. None splits on any whitespace (see :code:`str.split`).
         :param maxsplit: The string returned by the device is split at most `maxsplit` times.
             -1 (default) indicates no limit.
         :param cast: A type to cast each element of the split string.
@@ -461,7 +458,7 @@ class CommonBase:
         response = self.ask(command, **kwargs).strip()
         if callable(preprocess_reply):
             response = preprocess_reply(response)
-        results: list[Union[T, str]] = []
+        results: list[T | str] = []
         for result in response.split(separator, maxsplit=maxsplit):
             try:
                 if cast is bool:
@@ -475,7 +472,7 @@ class CommonBase:
                 results.append(result)
         return results
 
-    def binary_values(self, command: str, query_delay: Optional[float] = None, **kwargs):
+    def binary_values(self, command: str, query_delay: float | None = None, **kwargs):
         """ Write a command to the instrument and return a numpy array of the binary data.
 
         :param command: Command to be sent to the instrument.
@@ -490,8 +487,8 @@ class CommonBase:
     # Property creators
     @staticmethod
     def control(  # noqa: C901 accept that this is a complex method
-        get_command: Union[str, None],
-        set_command: Union[str, None],
+        get_command: str | None,
+        set_command: str | None,
         docs: str,
         validator: Callable[[Any, Vs], V2] = lambda v, vs: v,
         values: Vs = (),
@@ -499,17 +496,15 @@ class CommonBase:
         get_process: Callable[[Any], Any] = lambda v: v,
         get_process_list: Callable[[list[Any]], Any] = lambda v: v,
         set_process: Callable[[V2], Any] = lambda v: v,
-        command_process: Optional[Callable] = None,
         check_set_errors: bool = False,
         check_get_errors: bool = False,
         dynamic: bool = False,
-        preprocess_reply: Optional[Callable[[str], str]] = None,
-        separator: str = ",",
+        preprocess_reply: Callable[[str], str] | None = None,
+        separator: str | None = ",",
         maxsplit: int = -1,
         cast: Callable[[str], T] = float,
-        values_kwargs: Optional[dict] = None,
-        **kwargs,
-    ) -> Union[property, DynamicProperty]:
+        values_kwargs: dict | None = None,
+    ) -> property | DynamicProperty:
         """Return a property for the class based on the supplied
         commands. This property may be set and read from the
         instrument. See also :meth:`measurement` and :meth:`setting`.
@@ -530,12 +525,6 @@ class CommonBase:
         :param get_process_list: A function that takes the value list and processes it.
         :param set_process: A function that takes a value and allows processing
             before value mapping, returning the processed value
-        :param command_process: A function that takes a command and allows processing
-            before executing the command
-
-            .. deprecated:: 0.12
-                Use a dynamic property instead.
-
         :param check_set_errors: Toggles checking errors after setting
         :param check_get_errors: Toggles checking errors after getting
         :param dynamic: Specify whether the property parameters are meant to be changed in
@@ -544,15 +533,11 @@ class CommonBase:
             received from the instrument, before splitting it.
             The callable returns the processed string.
         :param separator: A separator character to split the string returned by
-            the device into a list.
+            the device into a list. None splits on any whitespace (see :code:`str.split`).
         :param maxsplit: The string returned by the device is split at most `maxsplit` times.
             -1 (default) indicates no limit.
         :param cast: A type to cast each element of the split string.
         :param dict values_kwargs: Further keyword arguments for :meth:`values`.
-        :param \\**kwargs: Keyword arguments for :meth:`values`.
-
-            .. deprecated:: 0.12
-                Use `values_kwargs` dictionary parameter instead.
 
         Example of usage of dynamic parameter is as follows:
 
@@ -587,46 +572,37 @@ class CommonBase:
         """
         if values_kwargs is None:
             values_kwargs = {}
-        if kwargs:
-            warn(f"Do not use keyword arguments {kwargs} as `control` parameter "
-                 f"for the `values` method, use `values_kwargs` parameter instead. docs:\n{docs}",
-                 FutureWarning)
-            values_kwargs.update(kwargs)
-
-        if command_process is None:
-            command_process = lambda c: c  # noqa: E731
-        else:
-            warn("Do not use `command_process`, use a dynamic property instead.", FutureWarning)
 
         def fget(
             self: "CommonBase",
-            get_command: Optional[str] = get_command,
+            get_command: str | None = get_command,
             values: Vs = values,
             map_values: bool = map_values,
             get_process: Callable[[Any], Any] = get_process,
             get_process_list: Callable[[list[Any]], Any] = get_process_list,
-            command_process=command_process,
             check_get_errors: bool = check_get_errors,
         ) -> Any:
             if get_command is None:
                 raise LookupError("Property can not be read.")
-            vals = self.values(command_process(get_command),
-                               separator=separator,
-                               cast=cast,
-                               preprocess_reply=preprocess_reply,
-                               maxsplit=maxsplit,
-                               **values_kwargs)
+            vals = self.values(
+                get_command,
+                separator=separator,
+                cast=cast,
+                preprocess_reply=preprocess_reply,
+                maxsplit=maxsplit,
+                **values_kwargs,
+            )
             if check_get_errors:
                 try:
                     error_list = self.check_get_errors()
                 except Exception as exc:
                     log.error("Exception raised while getting a property with the command "
-                              f"""'{command_process(get_command)}': '{str(exc)}'.""")
+                              f"""'{get_command}': '{str(exc)}'.""")
                     raise
                 errors = [str(error) for error in error_list]
                 if errors:
                     log.error("Error received after trying to get a property with the command "
-                              f"""'{command_process(get_command)}': '{"', '".join(errors)}'.""")
+                              f"""'{get_command}': '{"', '".join(errors)}'.""")
             if len(vals) == 1:
                 value = get_process(vals[0])
                 if not map_values:
@@ -640,8 +616,8 @@ class CommonBase:
                     raise KeyError(f"Value {value} not found in mapped values")
                 else:
                     raise ValueError(
-                        'Values of type `{}` are not allowed '
-                        'for Instrument.control'.format(type(values))
+                        f'Values of type `{type(values)}` are not allowed '
+                        'for Instrument.control'
                     )
             else:
                 vals = get_process_list(vals)
@@ -650,12 +626,11 @@ class CommonBase:
         def fset(
             self: "CommonBase",
             value: V0,
-            set_command: Optional[str] = set_command,
+            set_command: str | None = set_command,
             validator: Callable[[V0, Vs], V2] = validator,
             values: Vs = values,
             map_values: bool = map_values,
             set_process: Callable[[V2], Any] = set_process,
-            command_process=command_process,
             check_set_errors: bool = check_set_errors,
         ) -> None:
             if set_command is None:
@@ -670,22 +645,22 @@ class CommonBase:
                 val = values[val]
             else:
                 raise ValueError(
-                    'Values of type `{}` are not allowed '
-                    'for CommonBase.control'.format(type(values))
+                    f'Values of type `{type(values)}` are not allowed '
+                    'for CommonBase.control'
                 )
-            self.write(command_process(set_command) % val)
+            self.write(set_command % val)
             if check_set_errors:
                 try:
                     error_list = self.check_set_errors()
                 except Exception as exc:
                     log.error("Exception raised while setting a property with the command "
-                              f"""'{command_process(set_command) % val}': '{str(exc)}'.""")
+                              f"""'{set_command % val}': '{str(exc)}'.""")
                     raise
                 errors = [str(error) for error in error_list]
                 if errors:
                     log.error(
                         "Error received after trying to set a property with the command "
-                        f"""'{command_process(set_command) % val}': '{"', '".join(errors)}'."""
+                        f"""'{set_command % val}': '{"', '".join(errors)}'."""
                     )
 
         # Add the specified document string to the getter
@@ -708,16 +683,14 @@ class CommonBase:
         map_values: bool = False,
         get_process: Callable[[Any], Any] = lambda v: v,
         get_process_list: Callable[[list[Any]], Any] = lambda v: v,
-        command_process: Optional[Callable] = None,
         check_get_errors: bool = False,
         dynamic: bool = False,
-        preprocess_reply: Optional[Callable[[str], str]] = None,
-        separator: str = ",",
+        preprocess_reply: Callable[[str], str] | None = None,
+        separator: str | None = ",",
         maxsplit: int = -1,
         cast: Callable[[str], T] = float,
-        values_kwargs: Optional[dict] = None,
-        **kwargs,
-    ) -> Union[property, DynamicProperty]:
+        values_kwargs: dict | None = None,
+    ) -> property | DynamicProperty:
         """ Return a property for the class based on the supplied
         commands. This is a measurement quantity that may only be
         read from the instrument, not set.
@@ -731,12 +704,6 @@ class CommonBase:
         :param get_process: A function that takes a value and allows processing
             before value mapping, returning the processed value
         :param get_process_list: A function that takes the value list and processes it.
-        :param command_process: A function that take a command and allows processing
-            before executing the command, for getting
-
-            .. deprecated:: 0.12
-                Use a dynamic property instead.
-
         :param check_get_errors: Toggles checking errors after getting
         :param dynamic: Specify whether the property parameters are meant to be changed in
             instances or subclasses. See :meth:`control` for an usage example.
@@ -744,23 +711,14 @@ class CommonBase:
             received from the instrument, before splitting it.
             The callable returns the processed string.
         :param separator: A separator character to split the string returned by
-            the device into a list.
+            the device into a list. None splits on any whitespace (see :code:`str.split`).
         :param maxsplit: The string returned by the device is split at most `maxsplit` times.
             -1 (default) indicates no limit.
         :param cast: A type to cast each element of the split string.
         :param dict values_kwargs: Further keyword arguments for :meth:`values`.
-        :param \\**kwargs: Keyword arguments for :meth:`values`.
-
-            .. deprecated:: 0.12
-                Use `values_kwargs` dictionary parameter instead.
         """
         if values_kwargs is None:
             values_kwargs = {}
-        if kwargs:
-            warn(f"Do not use keyword arguments {kwargs} as `measurement` parameter "
-                 f"for the `values` method, use `values_kwargs` parameter instead. docs:\n{docs}",
-                 FutureWarning)
-            values_kwargs.update(kwargs)
 
         return CommonBase.control(get_command=get_command,
                                   set_command=None,
@@ -769,7 +727,6 @@ class CommonBase:
                                   map_values=map_values,
                                   get_process=get_process,
                                   get_process_list=get_process_list,
-                                  command_process=command_process,
                                   check_get_errors=check_get_errors,
                                   dynamic=dynamic,
                                   preprocess_reply=preprocess_reply,
@@ -789,7 +746,7 @@ class CommonBase:
         set_process: Callable[[Any], Any] = lambda v: v,
         check_set_errors: bool = False,
         dynamic: bool = False,
-    ) -> Union[property, DynamicProperty]:
+    ) -> property | DynamicProperty:
         """Return a property for the class based on the supplied
         commands. This property may be set, but raises an exception
         when being read from the instrument.
